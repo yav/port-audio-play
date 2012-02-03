@@ -13,32 +13,31 @@ int callback
   )
 {
   stream_state *state      = userData;
-  unsigned long frame_size = state->frame_size;
 
   while (frameCount > 0) {
     unsigned long have;
     unsigned long todo;
 
-    if (state->cur_chunk == NULL) {
-      state->cur_chunk  = state->next_chunk;
+    if (state->cur_sample == NULL) {
+      state->cur_sample  = state->next_sample;
       state->next_frame = 0;
-      if (! state->loop) state->next_chunk = NULL;
+      if (! state->loop) state->next_sample = NULL;
     }
 
-    if (state->cur_chunk == NULL) return paComplete;
+    if (state->cur_sample == NULL) return paComplete;
 
-    have = state->cur_chunk->frame_num - state->next_frame;
+    have = state->cur_sample->frame_num - state->next_frame;
     todo = frameCount;
     if (todo > have) todo = have;
     memcpy( output
-          , &state->cur_chunk->data[state->next_frame * frame_size]
-          , frame_size * todo
+          , &state->cur_sample->data[state->next_frame * state->channels]
+          , todo * state->channels * sizeof(int)
           );
     state->next_frame += todo;
     frameCount        -= todo;
 
-    if (state->next_frame == state->cur_chunk->frame_num) {
-      state->cur_chunk = NULL;
+    if (state->next_frame == state->cur_sample->frame_num) {
+      state->cur_sample = NULL;
     }
   }
 
@@ -48,33 +47,21 @@ int callback
 PaError playInit
   ( stream_state * s
   , unsigned long chan_num
-  , unsigned long sample_format
   , double        sample_rate
   , unsigned long frames_per_buffer   // 0 for auto.
   ) {
 
   PaError err;
 
-  s->cur_chunk  = NULL;
+  s->cur_sample = NULL;
   s->loop       = 0;
-  s->frame_size = chan_num;
-
-  switch (sample_format) {
-    case paFloat32: s->frame_size *= 4; break;
-    case paInt32:   s->frame_size *= 4; break;
-    case paInt24:   s->frame_size *= 3; break;
-    case paInt16:   s->frame_size *= 2; break;
-    case paInt8:    s->frame_size *= 1; break;
-    case paUInt8:   s->frame_size *= 1; break;
-    default: return paSampleFormatNotSupported;
-
-  }
+  s->channels   = chan_num;
 
   err = Pa_Initialize();
   if (err != paNoError) return err;
 
   return Pa_OpenDefaultStream( &s->stream
-                             , 0, chan_num, sample_format, sample_rate
+                             , 0, chan_num, paInt32, sample_rate
                              , frames_per_buffer
                              , callback
                              , s
@@ -92,4 +79,16 @@ PaError playStop  (stream_state *s) { return Pa_StopStream(s->stream); }
 PaError playAbort (stream_state *s) { return Pa_AbortStream(s->stream); }
 
 void playLooping (stream_state *s, int yes) { s->loop = yes; }
-void playNext (stream_state *s, chunk *next) { s->next_chunk = next; }
+void playNext (stream_state *s, sample *next) { s->next_sample = next; }
+
+sample *mallocSample(stream_state *s, unsigned long frames) {
+  sample *m = (sample*) malloc(sizeof(sample) +
+                                        sizeof(int) * frames * s->channels);
+  if (m == NULL) return m;
+  m->frame_num = 0;
+  m->max_frames = frames;
+  return m;
+}
+
+
+

@@ -1,12 +1,7 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 module HPlay
-  ( PA
-  , Chunk
-  , Format
-  , mallocChunk
-  , freeChunk
-  , chunkData
-  , PAError
+  ( Audio
+  , AudioError
   , withPA
   , Channels(..)
   , playStart
@@ -14,45 +9,38 @@ module HPlay
   , playAbort
   , playNext
   , playLooping
+
+  , Sample
+  , newSample
+  , sampleFromFile
+  , freeSample
+
+  , AudioFile
+  , AudioInfo(..)
+  , openAudioFile
+  , readAudio
+
   ) where
 
 
 import Foreign
 import Foreign.C
-import Data.Word
-import Data.Int
+import Control.Monad
 
 #include "play.h"
+#include "sndfile.h"
 
-type PAError = Int
+type AudioError = CInt
 
-newtype PA f    = PA (Ptr ())
-newtype Chunk f = CH (Ptr ())
+newtype Audio = A (Ptr ())
 
-mallocChunk :: PA f -> Int -> IO (Chunk f)
-mallocChunk (PA p) frameNum =
-  do fs <- (#peek stream_state, frame_size) p
-     q <- mallocBytes ((#size chunk) + frameNum * fs)
-     (#poke chunk, frame_num) q (fromIntegral frameNum :: CULong)
-     return (CH q)
-
-freeChunk :: Chunk f -> IO ()
-freeChunk (CH x) = free x
-
-chunkData :: Chunk f -> Ptr f
-chunkData (CH p) = (#ptr chunk, data) p
-
-withPA :: Format f =>
-          Channels -> Int -> (Either PAError (PA f) -> IO ()) -> IO ()
-withPA chans rate k = allocaBytes (#size stream_state) (mk . PA)
-  where
-  mk pa@(PA p) =
-    do err <- playInit p (exportChannels chans)
-                         (exportFormat pa)
-                         (fromIntegral rate)
-                         0
-       if err == 0 then k (Right pa) >> playCleanup p
-                   else k (Left err)
+withPA :: Channels -> Word -> (Either AudioError Audio -> IO ()) -> IO ()
+withPA chans rate k = allocaBytes (#size stream_state) $ \p ->
+                          do err <- playInit p (exportChannels chans)
+                                               (fromIntegral rate)
+                                               0
+                             if err == 0 then k (Right (A p)) >> playCleanup p
+                                         else k (Left err)
 
 data Channels = Mono | Stereo
                 deriving (Eq,Show,Read)
@@ -62,34 +50,88 @@ exportChannels c = case c of
                      Mono   -> 1
                      Stereo -> 2
 
-class Format f        where exportFormat :: PA f -> CULong 
-instance Format Word8 where exportFormat _ = (#const paUInt8)
-instance Format Int8  where exportFormat _ = (#const paInt8)
-instance Format Int16 where exportFormat _ = (#const paInt16)
-instance Format Int32 where exportFormat _ = (#const paInt32)
-instance Format Float where exportFormat _ = (#const paFloat32)
-
 foreign import ccall unsafe
-  playInit :: Ptr () -> CULong -> CULong -> CDouble
-                     -> CULong -> IO PAError
+  playInit :: Ptr () -> CULong -> CDouble -> CULong -> IO CInt
 
 foreign import ccall unsafe
   playCleanup :: Ptr () -> IO ()
 
 foreign import ccall unsafe
-  playStart :: PA f -> IO PAError
+  playStart :: Audio -> IO AudioError
 
 foreign import ccall unsafe
-  playStop :: PA f -> IO PAError
+  playStop :: Audio -> IO AudioError
 
 foreign import ccall unsafe
-  playAbort :: PA f -> IO PAError
+  playAbort :: Audio -> IO AudioError
 
 foreign import ccall unsafe
-  playNext :: PA f -> Chunk f -> IO ()
+  playNext :: Audio -> Sample -> IO ()
 
 foreign import ccall unsafe
-  playLooping :: PA f -> Bool -> IO ()
+  playLooping :: Audio -> Bool -> IO ()
 
+
+--------------------------------------------------------------------------------
+
+data AudioInfo = AudioInfo
+  { frameNum    :: !Word
+  , sampleRate  :: !Word
+  , channels    :: !Word
+  } deriving Show
+
+newtype AudioFile = AF (Ptr ())
+
+openAudioFile :: FilePath -> IO (AudioFile, AudioInfo)
+openAudioFile file =
+  allocaBytes (#size SF_INFO) $ \i ->
+    do p <- withCAString file $ \s -> sf_open s (#const SFM_READ) i
+       when (p == nullPtr) $ fail $ "Failed to open " ++ file
+       num   <- (#peek SF_INFO, frames)     i
+       rate  <- (#peek SF_INFO, samplerate) i
+       chans <- (#peek SF_INFO, channels)   i
+       return ( AF p
+              , AudioInfo { frameNum = fromIntegral (num :: (#type sf_count_t))
+                          , sampleRate = fromIntegral (rate :: CInt)
+                          , channels = fromIntegral (chans :: CInt)
+                          }
+              )
+
+readAudio :: Audio -> AudioFile -> Sample -> IO ()
+readAudio (A a) (AF p) (S s) =
+  do cs <- (#peek stream_state, channels) a
+     fs <- (#peek sample, max_frames) s
+     n  <- sf_read_int p ((#ptr sample, data) s) (fs * cs)
+     (#poke sample, frame_num) s (div n cs)
+
+foreign import ccall unsafe
+  sf_open :: CString -> CInt -> Ptr () -> IO (Ptr ())
+
+foreign import ccall unsafe
+  sf_read_int :: Ptr () -> Ptr () -> (#type sf_count_t) -> IO (#type sf_count_t)
+
+
+--------------------------------------------------------------------------------
+
+newtype Sample  = S (Ptr ())
+
+newSample :: Audio -> Word -> IO Sample
+newSample (A p) n = S `fmap` c_mallocSample p (fromIntegral n)
+
+sampleFromFile :: Audio -> FilePath -> IO Sample
+sampleFromFile a@(A pa) file =
+  do (f,i) <- openAudioFile file
+     cs <- (#peek stream_state, channels) pa
+     unless (channels i == cs) $ fail "newSampleFile: Channel mismatch."
+     s     <- newSample a (frameNum i)
+     readAudio a f s
+     return s
+
+
+freeSample :: Sample -> IO ()
+freeSample (S x) = free x
+
+foreign import ccall unsafe "mallocSample"
+  c_mallocSample :: Ptr () -> CULong -> IO (Ptr ())
 
 
