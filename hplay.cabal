@@ -1,0 +1,25 @@
+name: hplay
+version: 0.1
+category: Sound
+license: BSD3
+author: Iavor S. Diatchki
+maintainer: iavor.diatchki@gmail.com
+copyright: (c) 2012 Iavor S. Diatchki
+cabal-version: >= 1.8
+build-type: Simple
+
+library
+  exposed-modules: HPlay
+  ghc-options: -O2
+  build-depends: base
+  c-sources:         cbits/play.c
+  include-dirs:      cbits
+  extra-Libraries: portaudio
+  extra-Libraries: portaudio
+
+executable hplay
+  Main-is: test.hs
+  include-dirs:      cbits
+  build-depends: base, hplay, WAVE
+
+
