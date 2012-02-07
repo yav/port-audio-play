@@ -3,7 +3,8 @@ module HPlay
   ( Audio
   , AudioError
   , withPA
-  , Channels(..)
+  , getNext
+  , getSampleRate
   , playStart
   , playStop
   , playAbort
@@ -34,21 +35,26 @@ type AudioError = CInt
 
 newtype Audio = A (Ptr ())
 
-withPA :: Channels -> Word -> (Either AudioError Audio -> IO ()) -> IO ()
-withPA chans rate k = allocaBytes (#size stream_state) $ \p ->
-                          do err <- playInit p (exportChannels chans)
-                                               (fromIntegral rate)
-                                               0
-                             if err == 0 then k (Right (A p)) >> playCleanup p
-                                         else k (Left err)
+withPA :: Word -> Word -> (Audio -> IO ()) -> IO (Maybe AudioError)
+withPA chans rate k =
+  allocaBytes (#size stream_state) $ \p ->
+    do err <- playInit p (fromIntegral chans)
+                         (fromIntegral rate)
+                         0
+       if err == 0 then k (A p) >> playCleanup p >> return Nothing
+                   else return (Just err)
 
-data Channels = Mono | Stereo
-                deriving (Eq,Show,Read)
+getNext :: Audio -> IO (Maybe Sample)
+getNext (A p) =
+  do q <- (#peek stream_state, next_sample) p
+     return (if q == nullPtr then Nothing else Just (S q))
 
-exportChannels :: Channels -> CULong
-exportChannels c = case c of
-                     Mono   -> 1
-                     Stereo -> 2
+getSampleRate :: Audio -> IO Word
+getSampleRate (A p) =
+  do s <- (#peek stream_state, stream) p
+     q <- pa_GetStremInfo s
+     d <- (#peek PaStreamInfo, sampleRate) q
+     return (floor (d :: CDouble))
 
 foreign import ccall unsafe
   playInit :: Ptr () -> CULong -> CDouble -> CULong -> IO CInt
@@ -70,6 +76,9 @@ foreign import ccall unsafe
 
 foreign import ccall unsafe
   playLooping :: Audio -> Bool -> IO ()
+
+foreign import ccall unsafe "Pa_GetStreamInfo"
+  pa_GetStremInfo :: Ptr () -> IO (Ptr ())
 
 
 --------------------------------------------------------------------------------
@@ -97,18 +106,22 @@ openAudioFile file =
                           }
               )
 
-readAudio :: Audio -> AudioFile -> Sample -> IO ()
-readAudio (A a) (AF p) (S s) =
+readAudio :: Audio -> AudioFile -> Sample -> IO Word
+readAudio pa@(A a) (AF p) (S s) =
   do cs <- (#peek stream_state, channels) a
      fs <- (#peek sample, max_frames) s
-     n  <- sf_read_int p ((#ptr sample, data) s) (fs * cs)
-     (#poke sample, frame_num) s (div n cs)
+     n  <- sf_read_short p ((#ptr sample, data) s) (fs * cs)
+     let frames = fromIntegral (div n cs)
+     (#poke sample, frame_num) s frames
+     rate <- getSampleRate pa
+     return (div (frames * 1000 * 1000) rate)
 
 foreign import ccall unsafe
   sf_open :: CString -> CInt -> Ptr () -> IO (Ptr ())
 
 foreign import ccall unsafe
-  sf_read_int :: Ptr () -> Ptr () -> (#type sf_count_t) -> IO (#type sf_count_t)
+  sf_read_short :: Ptr () -> Ptr () -> (#type sf_count_t)
+                                    -> IO (#type sf_count_t)
 
 
 --------------------------------------------------------------------------------
@@ -118,14 +131,14 @@ newtype Sample  = S (Ptr ())
 newSample :: Audio -> Word -> IO Sample
 newSample (A p) n = S `fmap` c_mallocSample p (fromIntegral n)
 
-sampleFromFile :: Audio -> FilePath -> IO Sample
+sampleFromFile :: Audio -> FilePath -> IO (Word, Sample)
 sampleFromFile a@(A pa) file =
   do (f,i) <- openAudioFile file
      cs <- (#peek stream_state, channels) pa
      unless (channels i == cs) $ fail "newSampleFile: Channel mismatch."
-     s     <- newSample a (frameNum i)
-     readAudio a f s
-     return s
+     s <- newSample a (frameNum i)
+     l <- readAudio a f s
+     return (l, s)
 
 
 freeSample :: Sample -> IO ()

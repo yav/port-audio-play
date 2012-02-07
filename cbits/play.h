@@ -3,10 +3,13 @@
 
 #include <portaudio.h>
 
+
+#define SAMPLE short
+
 typedef struct {
   unsigned long max_frames;   // Number of frames that can fit here.
   unsigned long frame_num;    // Number of frames stored in the bufffer.
-  int data[];
+  SAMPLE data[];
 } sample;
 
 typedef struct {
@@ -15,11 +18,12 @@ typedef struct {
   unsigned long channels;
 
   // Internal state of the callback.
+  // Invariant: cur_sample not NULL while playing.
   sample* cur_sample;         // Current sample from which to read.
   unsigned long next_frame;   // The next frame from sample to play.
 
   // Communication with the callback.
-  sample* next_sample;        // Continue playing this.
+  sample * next_sample;        // Continue playing this.
 
   unsigned long loop:1;       // Indicates if we want looping.
   // If looping is enabled, when the callbakc starts using the sample,

@@ -11,13 +11,15 @@ build-type: Simple
 library
   exposed-modules: HPlay
   ghc-options: -O2 -Wall
+  cc-options: -O2 -Wall
   build-depends: base
-  c-sources:         cbits/play.c
-  include-dirs:      cbits
+  c-sources:     cbits/play.c
+  include-dirs:  cbits
   extra-Libraries: portaudio, sndfile
 
 executable hplay
   Main-is: test.hs
+  ghc-options: -O2 -Wall
   include-dirs:      cbits
   build-depends: base, hplay
 

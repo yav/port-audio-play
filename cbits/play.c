@@ -2,6 +2,11 @@
 #include <string.h>
 #include <play.h>
 
+static inline
+unsigned long to_bytes(stream_state *s, unsigned long x) {
+  return x * s->channels * sizeof(SAMPLE);
+}
+
 static
 int callback
   ( const void *input,
@@ -12,32 +17,29 @@ int callback
     void *userData
   )
 {
-  stream_state *state      = userData;
+  stream_state *state = userData;
+  sample *cur         = state->cur_sample;
+  unsigned long done  = 0;
 
-  while (frameCount > 0) {
-    unsigned long have;
-    unsigned long todo;
 
-    if (state->cur_sample == NULL) {
-      state->cur_sample  = state->next_sample;
-      state->next_frame = 0;
-      if (! state->loop) state->next_sample = NULL;
-    }
+  while (done < frameCount) {
+    unsigned long have = cur->frame_num - state->next_frame;
+    unsigned long todo = frameCount - done;
 
-    if (state->cur_sample == NULL) return paComplete;
-
-    have = state->cur_sample->frame_num - state->next_frame;
-    todo = frameCount;
     if (todo > have) todo = have;
-    memcpy( output
-          , &state->cur_sample->data[state->next_frame * state->channels]
-          , todo * state->channels * sizeof(int)
+
+    memcpy( output + to_bytes(state,done)
+          , &cur->data[state->next_frame * state->channels]
+          , to_bytes(state, todo)
           );
     state->next_frame += todo;
-    frameCount        -= todo;
+    done              += todo;
 
-    if (state->next_frame == state->cur_sample->frame_num) {
-      state->cur_sample = NULL;
+    if (state->next_frame == cur->frame_num) {
+      cur = state->cur_sample = state->next_sample;
+      state->next_frame = 0;
+      if (! state->loop) state->next_sample = NULL;
+      if (cur == NULL) return paComplete;
     }
   }
 
@@ -61,7 +63,7 @@ PaError playInit
   if (err != paNoError) return err;
 
   return Pa_OpenDefaultStream( &s->stream
-                             , 0, chan_num, paInt32, sample_rate
+                             , 0, chan_num, paInt16, sample_rate
                              , frames_per_buffer
                              , callback
                              , s
@@ -74,7 +76,13 @@ void playCleanup (stream_state *s) {
   (void) Pa_Terminate();
 }
 
-PaError playStart (stream_state *s) { return Pa_StartStream(s->stream); }
+PaError playStart (stream_state *s) {
+  if (s->next_sample == NULL) return paBadStreamPtr;  // hm, reusing errs...
+  s->cur_sample = s->next_sample;
+  s->next_frame = 0;
+  if (!s->loop) s->next_sample = NULL;
+  return Pa_StartStream(s->stream);
+}
 PaError playStop  (stream_state *s) { return Pa_StopStream(s->stream); }
 PaError playAbort (stream_state *s) { return Pa_AbortStream(s->stream); }
 
@@ -83,7 +91,7 @@ void playNext (stream_state *s, sample *next) { s->next_sample = next; }
 
 sample *mallocSample(stream_state *s, unsigned long frames) {
   sample *m = (sample*) malloc(sizeof(sample) +
-                                        sizeof(int) * frames * s->channels);
+                               sizeof(SAMPLE) * frames * s->channels);
   if (m == NULL) return m;
   m->frame_num = 0;
   m->max_frames = frames;
