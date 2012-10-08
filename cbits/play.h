@@ -26,8 +26,8 @@ typedef struct {
   sample * next_sample;        // Continue playing this.
 
   unsigned long loop:1;       // Indicates if we want looping.
-  // If looping is enabled, when the callbakc starts using the sample,
-  // it leaves the 'next_sample' unmodified, so that it will keep plaing the
+  // If looping is enabled, when the callback starts using the sample,
+  // it leaves the 'next_sample' unmodified, so that it will keep playing the
   // same sample over and over again.  If looping is not enabled, then
   // the driver will replace 'next_sample' with NULL as soon as it gets
   // started with it.
