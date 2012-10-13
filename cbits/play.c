@@ -134,7 +134,9 @@ void playFrames(stream_state *s, unsigned long frames, SAMPLE *data) {
   s->next_sample = m;
 
   if (!Pa_IsStreamActive(s->stream)) {
-    if (!Pa_IsStreamStopped(s->stream)) Pa_StopStream(s->stream);
+    if (!Pa_IsStreamStopped(s->stream))
+      Pa_StopStream(s->stream);
+    Pa_StartStream(s->stream);
   }
 
 }
