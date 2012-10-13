@@ -1,4 +1,4 @@
-import HPlay
+import Sound.Play
 import Control.Concurrent
 import System.Environment
 

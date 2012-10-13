@@ -1,5 +1,5 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
-module HPlay
+module Sound.Play
   ( PortAudio
   , withPortAudio
   , sampleFromFile

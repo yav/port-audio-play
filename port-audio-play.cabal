@@ -1,0 +1,26 @@
+name: port-audio-play
+version: 0.1
+category: Sound
+license: BSD3
+author: Iavor S. Diatchki
+maintainer: iavor.diatchki@gmail.com
+copyright: (c) 2012 Iavor S. Diatchki
+cabal-version: >= 1.8
+build-type: Simple
+
+library
+  exposed-modules:  Sound.Play
+  ghc-options:      -O2 -Wall
+  cc-options:       -O2 -Wall
+  build-depends:    base
+  c-sources:        cbits/play.c
+  include-dirs:     cbits
+  extra-Libraries:  portaudio, sndfile
+
+executable hplay
+  Main-is:          test.hs
+  ghc-options:      -O2 -Wall
+  include-dirs:     cbits
+  build-depends:    base, port-audio-play
+
+
