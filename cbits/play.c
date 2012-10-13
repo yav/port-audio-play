@@ -67,7 +67,10 @@ int callback
 
       state->next_sample = NULL;
     } else
-      if (state->cur_sample == NULL) return paComplete;
+      if (state->cur_sample == NULL) {
+        memset(output + to_bytes(state,done), 0, frameCount - done);
+        return paContinue;
+      }
 
     cur  = state->cur_sample;   // Not NULL
     have = cur->frame_num - cur->next_frame;
@@ -88,6 +91,7 @@ int callback
       free(cur);
     }
   }
+
 
   return paContinue;
 }
