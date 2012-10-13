@@ -18,7 +18,7 @@ library
   extra-Libraries: portaudio, sndfile
 
 executable hplay
-  Main-is: test.hs
+  Main-is: test1.hs
   ghc-options: -O2 -Wall
   include-dirs:      cbits
   build-depends: base, hplay
