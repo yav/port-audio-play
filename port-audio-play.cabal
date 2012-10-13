@@ -17,10 +17,4 @@ library
   include-dirs:     cbits
   extra-Libraries:  portaudio, sndfile
 
-executable hplay
-  Main-is:          test.hs
-  ghc-options:      -O2 -Wall
-  include-dirs:     cbits
-  build-depends:    base, port-audio-play
-
 

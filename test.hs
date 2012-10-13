@@ -7,18 +7,17 @@ main :: IO ()
 main =
   do f1 : f2 : _ <- getArgs
      s1 <- sampleFromFile f1
+     print $ (sampleRate s1, sampleChans s1)
+
      s2 <- sampleFromFile f2
 
-     withPortAudio 1 11025 $ \pa ->
+     withPortAudio 2 44100 $ \pa ->
 
         do x <- newEmptyMVar
            playSample pa s1
-           _ <- forkIO $
-             do threadDelay 1000000
-                playSample pa s2
-                threadDelay (sampleLenMillis s2)
-                putMVar x ()
-           takeMVar x
+           threadDelay (sampleLenMillis s1 + 1500000)
+           playSample pa s2
+           threadDelay (sampleLenMillis s2)
 
 
 
